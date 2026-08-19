@@ -1,0 +1,102 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- دوال مساعدة ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isDriver(driverId) {
+      return isSignedIn() && request.auth.uid == driverId;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ---------- users ----------
+    match /users/{userId} {
+      allow read, update: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow delete: if isAdmin();
+
+      match /addresses/{addressId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // ---------- drivers ----------
+    match /drivers/{driverId} {
+      // السائق يرى ويعدّل بياناته الخاصة فقط (الحالة، الموقع)، والمدير له كل شيء
+      allow read: if isDriver(driverId) || isAdmin() || isSignedIn();
+      allow write: if isDriver(driverId) || isAdmin();
+      allow create, delete: if isAdmin();
+    }
+
+    // ---------- admins ----------
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ---------- products ----------
+    match /products/{productId} {
+      allow read: if isSignedIn();       // أي مستخدم مسجّل يشاهد الأسعار
+      allow write: if isAdmin();          // التعديل حصري للإدارة
+    }
+
+    // ---------- orders ----------
+    match /orders/{orderId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.customerId == request.auth.uid)
+        || (isSignedIn() && resource.data.driverId == request.auth.uid);
+
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+
+      // العميل لا يعدّل الطلب بعد إنشائه (فقط إلغاء عبر حقل status عبر دالة خادم لاحقًا)
+      // السائق يعدّل فقط status الخاص بطلبه المسند إليه
+      allow update: if isAdmin()
+        || (isSignedIn() && resource.data.driverId == request.auth.uid);
+
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAdmin()
+          || (isSignedIn() && get(/databases/$(database)/documents/orders/$(orderId)).data.customerId == request.auth.uid)
+          || (isSignedIn() && get(/databases/$(database)/documents/orders/$(orderId)).data.driverId == request.auth.uid);
+
+        allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // ---------- driverTracking ----------
+    match /driverTracking/{orderId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && get(/databases/$(database)/documents/orders/$(orderId)).data.customerId == request.auth.uid)
+        || (isSignedIn() && get(/databases/$(database)/documents/orders/$(orderId)).data.driverId == request.auth.uid);
+
+      allow write: if isAdmin()
+        || (isSignedIn() && get(/databases/$(database)/documents/orders/$(orderId)).data.driverId == request.auth.uid);
+    }
+
+    // ---------- notifications ----------
+    match /notifications/{notificationId} {
+      allow read, update: if isAdmin() || isOwner(resource.data.userId);
+      allow create: if isAdmin(); // تُنشأ عبر Cloud Functions/الإدارة فقط
+      allow delete: if isAdmin();
+    }
+
+    // ---------- settings ----------
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
