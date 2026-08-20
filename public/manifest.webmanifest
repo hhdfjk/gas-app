@@ -1,0 +1,10 @@
+{
+  "name": "توصيل الغاز - الميمونة",
+  "short_name": "غاز الميمونة",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#1E5F74",
+  "background_color": "#F7F8FA"
+}
